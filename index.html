@@ -305,6 +305,13 @@ const CONFIG = {
   // WhatsApp do estúdio: só números, com 55 + DDD.
   whatsapp: "5521970674691",
 
+  // Banco: a inscrição é gravada em inscricoes_evento no Supabase.
+  // A chave abaixo é publicável por design — só permite INSERT nesta tabela,
+  // nunca leitura da lista (ver migration 20260805000000_inscricoes_evento.sql).
+  supabaseUrl: "https://fgvxhwpqsxohqrccrlfn.supabase.co",
+  supabaseKey: "sb_publishable_vEMdFzykAiJ74UA9IrB9BQ_WNqemzzJ",
+  evento: "picnic-day-2026-08-30",
+
   // Pix Copia e Cola — chave 49872895000143 (Leticia Lemos), valor já embutido.
   pixIndividual: "00020126360014br.gov.bcb.pix011449872895000143520400005303986540570.005802BR5913LETICIA LEMOS6014RIO DE JANEIRO62120508PICNIC7063045448",
   pixDupla:      "00020126360014br.gov.bcb.pix0114498728950001435204000053039865406100.005802BR5913LETICIA LEMOS6014RIO DE JANEIRO62130509PICNIC10063044935",
@@ -379,13 +386,45 @@ const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51
     return ok;
   }
 
+  // Grava a inscrição no banco. Roda em paralelo à ida pro WhatsApp:
+  // se o banco falhar, a pessoa segue mesmo assim — o comprovante no
+  // WhatsApp continua sendo a confirmação que vale.
+  let jaRegistrou = false;
+  function registrar(){
+    if (jaRegistrou || !CONFIG.supabaseUrl || !CONFIG.supabaseKey) return;
+    jaRegistrou = true;
+    const corpo = {
+      evento: CONFIG.evento,
+      nome: nome.value.trim(),
+      telefone: tel.value.trim(),
+      tipo_ingresso: dupla ? "dupla" : "individual",
+      nome_acompanhante: dupla ? acomp.value.trim() : null,
+      valor_centavos: dupla ? 10000 : 7000
+    };
+    try {
+      fetch(CONFIG.supabaseUrl + "/rest/v1/inscricoes_evento", {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "apikey": CONFIG.supabaseKey,
+          "Authorization": "Bearer " + CONFIG.supabaseKey,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify(corpo)
+      }).catch(() => { jaRegistrou = false; });
+    } catch (_) { jaRegistrou = false; }
+  }
+
   waBtn.addEventListener("click", e => {
     if (waBtn.getAttribute("aria-disabled") === "true") {
       e.preventDefault();
       const f = faltando();
       erro.textContent = "Antes de enviar, preencha " + f.join(", ") + ".";
       (f[0] === "seu nome" ? nome : f[0] === "seu WhatsApp" ? tel : acomp).focus();
+      return;
     }
+    registrar();
   });
 
   tkIndiv.addEventListener("click", () => { dupla = false; render(); });
